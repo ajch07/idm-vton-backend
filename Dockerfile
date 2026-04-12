@@ -10,15 +10,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Remove flash_attn if pre-installed — PEP604 annotations crash PyTorch 2.4 infer_schema
-# Belt-and-suspenders: pip uninstall + delete files + handler also blocks at Python level
-RUN pip uninstall -y flash_attn flash-attn 2>/dev/null; \
-    find / -type d -name "flash_attn" 2>/dev/null | xargs -r rm -rf 2>/dev/null; \
-    echo "flash_attn cleanup done"
+# ---- Phase 1: Remove flash_attn from base image BEFORE pip install ----
+# The base image ships flash_attn whose PEP604 annotations crash PyTorch 2.4 infer_schema.
+RUN pip uninstall -y flash_attn flash-attn 2>/dev/null || true && \
+    find / -name '*flash_attn*' -exec rm -rf {} + 2>/dev/null || true && \
+    find / -name '*flash-attn*' -exec rm -rf {} + 2>/dev/null || true && \
+    echo "Phase 1: flash_attn removed from base image"
 
-# Install Python deps
+# ---- Phase 2: Install Python deps ----
 COPY requirements-runpod.txt .
 RUN pip install --no-cache-dir --retries 5 --timeout 600 -r requirements-runpod.txt
+
+# ---- Phase 3: Remove flash_attn AGAIN after pip install ----
+# In case any dependency silently pulled it back in.
+RUN pip uninstall -y flash_attn flash-attn 2>/dev/null || true && \
+    find / -name '*flash_attn*' -exec rm -rf {} + 2>/dev/null || true && \
+    find / -name '*flash-attn*' -exec rm -rf {} + 2>/dev/null || true && \
+    echo "Phase 3: flash_attn post-install cleanup done"
+
+# ---- Phase 4: Create .pth startup blocker ----
+# .pth files in site-packages execute during site.py init — BEFORE any user code,
+# before torch loads, before diffusers loads. This is the earliest possible block.
+RUN python -c "\
+import site; \
+pth = site.getsitepackages()[0] + '/00_block_fa.pth'; \
+open(pth, 'w').write('import sys; sys.modules.update({m: None for m in [\"flash_attn\", \"flash_attn.flash_attn_interface\", \"flash_attn.bert_padding\", \"flash_attn.flash_attn_triton\", \"flash_attn.ops\", \"flash_attn.ops.fused_dense\", \"flash_attn_2_cuda\", \"flash_attn_cuda\", \"flash_attn_3_cuda\"]})\n'); \
+print('Phase 4: Created startup blocker at ' + pth)"
+
+# ---- Phase 5: Verify ----
+RUN echo '--- FLASH_ATTN VERIFICATION ---' && \
+    (pip list 2>/dev/null | grep -i flash && echo 'WARN: flash_attn in pip list' || echo 'OK: not in pip list') && \
+    (find / -name '*flash_attn*.so' 2>/dev/null | head -5 | grep . && echo 'WARN: .so files found on disk' || echo 'OK: no .so files on disk') && \
+    (python -c "import flash_attn" 2>/dev/null && echo 'WARN: import succeeded!' || echo 'OK: import blocked') && \
+    echo '--- END VERIFICATION ---'
 
 # Copy application code
 COPY app/ ./app/
