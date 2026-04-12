@@ -1,0 +1,18 @@
+# RunPod handler dependencies (IDM-VTON)
+# NOTE: torch, torchvision, torchaudio, xformers already pre-installed in
+#       runpod/pytorch base image — DO NOT re-install them here.
+
+runpod>=1.6.0
+
+# Pin diffusers to 0.27.x — IDM-VTON custom pipeline uses internal APIs
+# (e.g. diffusers.models.lora.adjust_lora_scale_text_encoder)
+# that were removed in diffusers >= 0.30
+diffusers==0.27.2
+
+transformers>=4.44.0
+accelerate>=0.33.0
+safetensors>=0.4.2
+peft>=0.12.0
+pillow>=10.1.0
+huggingface-hub>=0.25.0
+numpy<2.0,>=1.26.0

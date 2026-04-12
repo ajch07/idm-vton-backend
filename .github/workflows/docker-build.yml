@@ -1,0 +1,27 @@
+name: Build & Push RunPod Docker Image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # Manual trigger button on GitHub
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/idm-vton:v12
+            ${{ secrets.DOCKERHUB_USERNAME }}/idm-vton:${{ github.sha }}
