@@ -72,6 +72,7 @@ class RunpodTryOnService(TryOnService):
                     "garment_image_type": garment_image_type,
                     "garment_name": metadata.garment_name,
                     "garment_id": metadata.garment_id,
+                    "category": metadata.category,
                     "prompt": prompt,
                 }
             }

@@ -15,7 +15,7 @@ class TryOnMetadata:
     garment_id: str
     user_prompt: Optional[str] = None  # Custom prompt from user
     user_negative_prompt: Optional[str] = None  # Custom negative prompt
-    # Additional attributes can be added here after testing if needed
+    category: Optional[str] = None  # e.g. "Skirts", "Tops", "Dresses"
 
 
 @dataclass

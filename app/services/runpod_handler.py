@@ -53,12 +53,30 @@ else:
     print("[TryOn] WARNING: No HF_TOKEN found! Gated model download will fail.")
 
 MODEL_ID = "black-forest-labs/FLUX.1-Fill-dev"
-TARGET_HEIGHT = 1024
-TARGET_WIDTH = 768
+# Single panel size — composite will be 2x this width
+PANEL_HEIGHT = 1024
+PANEL_WIDTH = 768
+
+# Keywords to detect garment region
+_LOWER_BODY_KW = {"skirt", "pant", "pants", "trouser", "trousers", "jeans", "shorts",
+                   "legging", "leggings", "bottom", "bottoms", "palazzo", "culottes"}
+_FULL_BODY_KW = {"dress", "gown", "jumpsuit", "romper", "saree", "sari", "suit",
+                  "onepiece", "one-piece", "co-ord", "coord"}
+
+
+def _detect_region(garment_name: str, category: str | None = None) -> str:
+    """Return 'upper', 'lower', or 'full' based on garment name/category."""
+    text = f"{garment_name} {category or ''}".lower()
+    tokens = set(text.replace("-", " ").split())
+    if tokens & _LOWER_BODY_KW:
+        return "lower"
+    if tokens & _FULL_BODY_KW:
+        return "full"
+    return "upper"
 
 
 class FluxTryOnInference:
-    """FLUX.1-Fill-dev inpainting for virtual try-on."""
+    """FLUX.1-Fill-dev inpainting for virtual try-on using composite image technique."""
 
     def __init__(self):
         self.pipe = None
@@ -71,38 +89,65 @@ class FluxTryOnInference:
         print(f"[TryOn] Loading FLUX.1-Fill-dev... (device={self.device})")
         t0 = time.time()
 
-        # Lazy import - runs AFTER flash_attn is blocked above
         from diffusers import FluxFillPipeline
 
         self.pipe = FluxFillPipeline.from_pretrained(
             MODEL_ID,
             torch_dtype=torch.bfloat16,
-            token=_hf_token,  # also passed explicitly as backup
+            token=_hf_token,
         )
-        # CPU offload keeps VRAM safe on RTX 4090 (24 GB)
         self.pipe.enable_model_cpu_offload()
 
         print(f"[TryOn] Model loaded in {time.time() - t0:.1f}s")
 
-    def _make_upper_body_mask(self, width: int, height: int) -> Image.Image:
-        """White (255) = inpaint (clothing area), Black (0) = keep."""
-        mask = Image.new("L", (width, height), 0)
+    @staticmethod
+    def _make_mask(region: str) -> Image.Image:
+        """Build a mask for the composite image (garment left | person right).
+
+        White (255) = inpaint, Black (0) = keep.
+        Left half is ALWAYS black (keep garment reference visible).
+        Right half is white only over the clothing area.
+        """
+        w = PANEL_WIDTH * 2  # full composite width
+        h = PANEL_HEIGHT
+        mask = Image.new("L", (w, h), 0)
         draw = ImageDraw.Draw(mask)
-        draw.rectangle(
-            [
-                int(width * 0.1),
-                int(height * 0.10),
-                int(width * 0.9),
-                int(height * 0.65),
-            ],
-            fill=255,
-        )
+
+        # Right-half clothing region coordinates
+        rx0 = PANEL_WIDTH + int(PANEL_WIDTH * 0.05)
+        rx1 = PANEL_WIDTH + int(PANEL_WIDTH * 0.95)
+
+        if region == "upper":
+            ry0 = int(h * 0.12)
+            ry1 = int(h * 0.60)
+        elif region == "lower":
+            ry0 = int(h * 0.45)
+            ry1 = int(h * 0.95)
+        else:  # full
+            ry0 = int(h * 0.12)
+            ry1 = int(h * 0.95)
+
+        draw.rectangle([rx0, ry0, rx1, ry1], fill=255)
         return mask
+
+    @staticmethod
+    def _build_composite(
+        person: Image.Image, garment: Image.Image
+    ) -> Image.Image:
+        """Side-by-side: [garment | person] so FLUX sees the reference garment."""
+        garment_panel = garment.resize((PANEL_WIDTH, PANEL_HEIGHT), Image.LANCZOS)
+        person_panel = person.resize((PANEL_WIDTH, PANEL_HEIGHT), Image.LANCZOS)
+        composite = Image.new("RGB", (PANEL_WIDTH * 2, PANEL_HEIGHT))
+        composite.paste(garment_panel, (0, 0))
+        composite.paste(person_panel, (PANEL_WIDTH, 0))
+        return composite
 
     async def generate(
         self,
         person_image: Image.Image,
-        garment_desc: str = "a garment",
+        garment_image: Image.Image,
+        garment_name: str = "a garment",
+        category: str | None = None,
         num_steps: int = 28,
         guidance_scale: float = 30.0,
         seed: int = 42,
@@ -111,36 +156,38 @@ class FluxTryOnInference:
             await self.load_model()
 
         t0 = time.time()
+        region = _detect_region(garment_name, category)
+        print(f"[TryOn] Region={region} | garment={garment_name}")
 
-        person_image = person_image.resize(
-            (TARGET_WIDTH, TARGET_HEIGHT), Image.LANCZOS
-        )
-        mask = self._make_upper_body_mask(TARGET_WIDTH, TARGET_HEIGHT)
+        composite = self._build_composite(person_image, garment_image)
+        mask = self._make_mask(region)
 
         prompt = (
-            f"a photo of a person wearing {garment_desc}, "
-            f"high quality, realistic, well-fitted clothing, fashion photography"
+            f"The person on the right is wearing the exact same garment shown on the left. "
+            f"The garment is a {garment_name}. Preserve the person's face, hair, pose, and "
+            f"background exactly. The clothing fits naturally, with realistic fabric texture, "
+            f"folds, and shadows. High quality fashion photography."
         )
 
         generator = torch.Generator("cpu").manual_seed(seed)
 
-        # FluxFillPipeline.__call__ parameters verified against diffusers 0.37.1 docs:
-        # prompt, image, mask_image, height, width, num_inference_steps,
-        # guidance_scale (default 30.0), max_sequence_length (default 512), generator
         result = self.pipe(
             prompt=prompt,
-            image=person_image,
+            image=composite,
             mask_image=mask,
-            height=TARGET_HEIGHT,
-            width=TARGET_WIDTH,
+            height=PANEL_HEIGHT,
+            width=PANEL_WIDTH * 2,
             num_inference_steps=num_steps,
             guidance_scale=guidance_scale,
             max_sequence_length=512,
             generator=generator,
         ).images[0]
 
-        print(f"[TryOn] Generated in {time.time() - t0:.1f}s ({num_steps} steps)")
-        return result
+        # Crop right half — that's the person with new garment
+        output = result.crop((PANEL_WIDTH, 0, PANEL_WIDTH * 2, PANEL_HEIGHT))
+
+        print(f"[TryOn] Generated in {time.time() - t0:.1f}s ({num_steps} steps, region={region})")
+        return output
 
 
 # ---------------------------------------------------------------------------
@@ -171,18 +218,25 @@ class TryOnHandler:
             if not user_b64:
                 return {"success": False, "error": "Missing user_image"}
 
+            garment_b64 = event.get("garment_image_base64") or event.get("garment_image")
+            if not garment_b64:
+                return {"success": False, "error": "Missing garment_image"}
+
             garment_name = event.get("garment_name", "a garment")
-            garment_desc = event.get("prompt") or garment_name
+            category = event.get("category")
             num_steps = min(int(event.get("num_steps", 28)), 50)
             seed = int(event.get("seed", 42))
 
             person_image = self._decode_image(user_b64)
+            garment_image = self._decode_image(garment_b64)
 
-            print(f"[TryOn] Generating | garment={event.get('garment_id', 'unknown')}")
+            print(f"[TryOn] Generating | garment={event.get('garment_id', 'unknown')} | name={garment_name}")
 
             result = await self.inference.generate(
                 person_image=person_image,
-                garment_desc=garment_desc,
+                garment_image=garment_image,
+                garment_name=garment_name,
+                category=category,
                 num_steps=num_steps,
                 seed=seed,
             )

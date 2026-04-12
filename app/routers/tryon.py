@@ -86,6 +86,7 @@ async def try_on(
     garmentImage: UploadFile = File(...),
     garmentId: str = Form(...),
     garmentName: str = Form(...),
+    category: Optional[str] = Form(None),
     prompt: Optional[str] = Form(None),
     negativePrompt: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
@@ -111,6 +112,7 @@ async def try_on(
             garment_id=garmentId,
             user_prompt=prompt,
             user_negative_prompt=negativePrompt,
+            category=category,
         )
         
         # Get appropriate service (FAL, Runpod, or Hybrid)
