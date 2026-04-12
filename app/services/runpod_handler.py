@@ -44,8 +44,8 @@ def _ensure_idm_vton_source():
     src_dir = CACHE_DIR / "idm-vton-src"
     
     # If already downloaded, just add to path and return
-    # Files end up at: src_dir/src/tryon_pipeline.py
-    if (src_dir / "src" / "tryon_pipeline.py").exists():
+    # Check BOTH src/ and ip_adapter/ are present
+    if (src_dir / "src" / "tryon_pipeline.py").exists() and (src_dir / "ip_adapter").exists():
         if str(src_dir) not in sys.path:
             sys.path.insert(0, str(src_dir))
         return
@@ -59,7 +59,7 @@ def _ensure_idm_vton_source():
         snapshot_download(
             MODEL_ID,
             repo_type="space",
-            allow_patterns=["src/*"],  # Only download src/ folder
+            allow_patterns=["src/*", "ip_adapter/*"],  # src/ pipeline + ip_adapter/ local package
             local_dir=str(src_dir),
         )
         
