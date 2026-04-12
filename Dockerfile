@@ -10,8 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Remove flash_attn if pre-installed — its PEP604 annotations crash PyTorch infer_schema
-RUN pip uninstall -y flash_attn flash-attn 2>/dev/null; true
+# Remove flash_attn if pre-installed — PEP604 annotations crash PyTorch 2.4 infer_schema
+# Belt-and-suspenders: pip uninstall + delete files + handler also blocks at Python level
+RUN pip uninstall -y flash_attn flash-attn 2>/dev/null; \
+    find / -type d -name "flash_attn" 2>/dev/null | xargs -r rm -rf 2>/dev/null; \
+    echo "flash_attn cleanup done"
 
 # Install Python deps
 COPY requirements-runpod.txt .

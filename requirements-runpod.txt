@@ -1,15 +1,21 @@
 # RunPod handler dependencies (FLUX.1-Fill-dev virtual try-on)
-# torch, torchvision, torchaudio already pre-installed in runpod/pytorch base image
+# torch, torchvision already pre-installed in runpod/pytorch:2.4 base image
+# DO NOT add torch or torchvision here
 
 runpod>=1.6.0
 
-# Diffusers with FluxFillPipeline support
-diffusers>=0.30.0
+# diffusers 0.37.1: verified to contain FluxFillPipeline
+# (see https://huggingface.co/docs/diffusers/api/pipelines/flux)
+diffusers==0.37.1
 
+# transformers: T5 tokenizer (sentencepiece) + CLIP tokenizer for FLUX
 transformers>=4.44.0
-accelerate>=0.26.0
-safetensors>=0.4.2
 sentencepiece>=0.1.99
+
+# accelerate: required by enable_model_cpu_offload()
+accelerate>=0.26.0
+
+safetensors>=0.4.2
 protobuf>=3.20.0
 pillow>=10.0.0
 numpy>=1.24.0,<2.0
