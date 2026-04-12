@@ -1,6 +1,5 @@
-# RunPod pre-built image: Python 3.11, PyTorch 2.6, CUDA 12.4
-# torch, torchvision, torchaudio, CUDA all pre-installed (~5GB saved)
-FROM runpod/pytorch:2.6.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+# RunPod pre-built image: Python 3.11, PyTorch 2.4, CUDA 12.4
+FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 
 WORKDIR /app
 
@@ -11,13 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# NO xformers needed — PyTorch 2.4 has built-in SDPA (same perf on RTX 4090)
-# This saves 900MB+ download and avoids timeout issues
+# Remove flash_attn if pre-installed — its PEP604 annotations crash PyTorch infer_schema
+RUN pip uninstall -y flash_attn flash-attn 2>/dev/null; true
 
-# Install Python deps with generous retry/timeout for large downloads
+# Install Python deps
 COPY requirements-runpod.txt .
-RUN pip install --no-cache-dir --retries 5 --timeout 600 -r requirements-runpod.txt && \
-    pip uninstall -y flash_attn flash-attn 2>/dev/null; true
+RUN pip install --no-cache-dir --retries 5 --timeout 600 -r requirements-runpod.txt
 
 # Copy application code
 COPY app/ ./app/
