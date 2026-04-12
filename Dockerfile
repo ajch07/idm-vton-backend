@@ -16,8 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python deps with generous retry/timeout for large downloads
 COPY requirements-runpod.txt .
-RUN pip install --no-cache-dir --retries 5 --timeout 600 -r requirements-runpod.txt && \
-    pip install --no-cache-dir --force-reinstall torchvision==0.19.0 --no-deps
+RUN pip install --no-cache-dir --retries 5 --timeout 600 -r requirements-runpod.txt
 
 # Copy application code
 COPY app/ ./app/

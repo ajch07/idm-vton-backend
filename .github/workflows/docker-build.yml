@@ -23,5 +23,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/idm-vton:v16
+            ${{ secrets.DOCKERHUB_USERNAME }}/idm-vton:v17
             ${{ secrets.DOCKERHUB_USERNAME }}/idm-vton:${{ github.sha }}
