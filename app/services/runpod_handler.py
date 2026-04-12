@@ -26,7 +26,6 @@ import time
 from pathlib import Path
 
 import torch
-import torchvision.transforms as transforms
 from PIL import Image, ImageDraw
 
 _hf_token = os.environ.get("HF_TOKEN")
@@ -45,38 +44,37 @@ def _ensure_idm_vton_source():
     src_dir = CACHE_DIR / "idm-vton-src"
     
     # If already downloaded, just add to path and return
-    if (src_dir / "tryon_pipeline.py").exists():
+    # Files end up at: src_dir/src/tryon_pipeline.py
+    if (src_dir / "src" / "tryon_pipeline.py").exists():
         if str(src_dir) not in sys.path:
-            sys.path.insert(0, str(src_dir.parent))
+            sys.path.insert(0, str(src_dir))
         return
     
     print("[IDM-VTON] Downloading source files from HuggingFace Space...")
     try:
         from huggingface_hub import snapshot_download
         
-        # Download entire repo, but only to /app/hf_cache/idm-vton (one-time ~500 MB)
-        # This fetches src/ and other necessary files
+        # Download from the SPACE repo (not model repo!)
+        # The model repo has weights; the Space repo has src/ with pipeline code.
         snapshot_download(
             MODEL_ID,
-            cache_dir=str(CACHE_DIR),
-            resume_download=True,
+            repo_type="space",
             allow_patterns=["src/*"],  # Only download src/ folder
             local_dir=str(src_dir),
-            local_dir_use_symlinks=False,
         )
         
         if str(src_dir) not in sys.path:
-            sys.path.insert(0, str(src_dir.parent))
+            sys.path.insert(0, str(src_dir))
         print("[IDM-VTON] Source files ready!")
         
     except Exception as e:
-        # If sparse download fails, just clone the full repo once
-        print(f"[IDM-VTON] Sparse download failed ({e}), cloning full repo...")
+        # If sparse download fails, just clone the full Space once
+        print(f"[IDM-VTON] Sparse download failed ({e}), cloning Space repo...")
         os.system(
             f"git clone --depth 1 https://huggingface.co/spaces/yisol/IDM-VTON {src_dir}"
         )
         if str(src_dir) not in sys.path:
-            sys.path.insert(0, str(src_dir.parent))
+            sys.path.insert(0, str(src_dir))
 
 
 class IDMVTONInference:
@@ -88,6 +86,8 @@ class IDMVTONInference:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self._dtype = torch.float16 if self.device == "cuda" else torch.float32
         # ToTensor converts PIL [0,255] → tensor [0,1] (matches HF Space behavior)
+        # Defer torchvision import to avoid C++ extension crash at module load time
+        import torchvision.transforms as transforms
         self._to_tensor = transforms.Compose([
             transforms.Resize((TARGET_HEIGHT, TARGET_WIDTH)),
             transforms.ToTensor(),
