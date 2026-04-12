@@ -1,6 +1,6 @@
-# RunPod pre-built image: Python 3.11, PyTorch 2.4, CUDA 12.4
+# RunPod pre-built image: Python 3.11, PyTorch 2.6, CUDA 12.4
 # torch, torchvision, torchaudio, CUDA all pre-installed (~5GB saved)
-FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+FROM runpod/pytorch:2.6.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 
 WORKDIR /app
 
@@ -16,7 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python deps with generous retry/timeout for large downloads
 COPY requirements-runpod.txt .
-RUN pip install --no-cache-dir --retries 5 --timeout 600 -r requirements-runpod.txt
+RUN pip install --no-cache-dir --retries 5 --timeout 600 -r requirements-runpod.txt && \
+    pip uninstall -y flash_attn flash-attn 2>/dev/null; true
 
 # Copy application code
 COPY app/ ./app/
