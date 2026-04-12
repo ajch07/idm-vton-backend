@@ -27,5 +27,5 @@ ENV HF_HOME=/app/hf_cache
 ENV TRANSFORMERS_CACHE=/app/hf_cache
 RUN mkdir -p /app/hf_cache
 
-# Start IDM-VTON RunPod handler
+# Start FLUX try-on RunPod handler
 CMD ["python", "-m", "app.services.runpod_handler"]

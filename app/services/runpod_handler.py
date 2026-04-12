@@ -1,21 +1,183 @@
 """
-RunPod serverless handler for IDM-VTON virtual try-on.
+RunPod serverless handler for FLUX-based virtual try-on.
 
-Uses the proper IDM-VTON pipeline from yisol/IDM-VTON with:
-  - Custom UNet (tryon) with 13-channel input (latent + mask + masked_img + pose)
-  - Garment encoder UNet (garmnet) for clothing feature extraction
-  - CLIP Vision for IP-adapter garment embedding
-  - VAE, dual CLIP text encoders, tokenizers, DDPM scheduler
+Uses black-forest-labs/FLUX.1-Fill-dev (official Flux inpainting model).
+No custom pipeline, no DensePose, no external source downloads.
+Just load the model, create a mask, run inpainting.
 
-Preprocessing (simplified — no DensePose/detectron2):
-  - Mask: upper-body rectangle (TODO: add human parsing for better masks)
-  - Pose: black image placeholder (TODO: add DensePose for better quality)
-
-Target: ~15-20s inference on RTX 4090/A40 with 20 steps.
-
-NOTE: IDM-VTON source files are downloaded lazily on first inference
-(from yisol/IDM-VTON HF Space), so Docker build is instant.
+Requires HF_TOKEN env var set in RunPod (FLUX.1-Fill-dev is gated).
 """
+
+import asyncio
+import base64
+import io
+import os
+import time
+
+import torch
+from PIL import Image, ImageDraw
+
+_hf_token = os.environ.get("HF_TOKEN")
+
+MODEL_ID = "black-forest-labs/FLUX.1-Fill-dev"
+TARGET_HEIGHT = 1024
+TARGET_WIDTH = 768
+
+
+class FluxTryOnInference:
+    """FLUX.1-Fill-dev inpainting for virtual try-on."""
+
+    def __init__(self):
+        self.pipe = None
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    async def load_model(self):
+        if self.pipe is not None:
+            return
+
+        print(f"[TryOn] Loading FLUX.1-Fill-dev... (device={self.device})")
+        t0 = time.time()
+
+        from diffusers import FluxFillPipeline
+
+        self.pipe = FluxFillPipeline.from_pretrained(
+            MODEL_ID,
+            torch_dtype=torch.bfloat16,
+            token=_hf_token,
+        )
+        # CPU offload keeps VRAM safe on RTX 4090 (24GB)
+        self.pipe.enable_model_cpu_offload()
+
+        print(f"[TryOn] Model loaded in {time.time()-t0:.1f}s")
+
+    def _make_upper_body_mask(self, width: int, height: int) -> Image.Image:
+        """White = inpaint (clothing area), Black = keep."""
+        mask = Image.new("L", (width, height), 0)
+        draw = ImageDraw.Draw(mask)
+        draw.rectangle(
+            [
+                int(width * 0.1),
+                int(height * 0.10),
+                int(width * 0.9),
+                int(height * 0.65),
+            ],
+            fill=255,
+        )
+        return mask
+
+    async def generate(
+        self,
+        person_image: Image.Image,
+        garment_desc: str = "a garment",
+        num_steps: int = 28,
+        guidance_scale: float = 30.0,
+        seed: int = 42,
+    ) -> Image.Image:
+        if self.pipe is None:
+            await self.load_model()
+
+        t0 = time.time()
+
+        person_image = person_image.resize(
+            (TARGET_WIDTH, TARGET_HEIGHT), Image.LANCZOS
+        )
+        mask = self._make_upper_body_mask(TARGET_WIDTH, TARGET_HEIGHT)
+
+        prompt = (
+            f"a photo of a person wearing {garment_desc}, "
+            f"high quality, realistic, well-fitted clothing, fashion photography"
+        )
+
+        generator = torch.Generator("cpu").manual_seed(seed)
+
+        result = self.pipe(
+            prompt=prompt,
+            image=person_image,
+            mask_image=mask,
+            height=TARGET_HEIGHT,
+            width=TARGET_WIDTH,
+            num_inference_steps=num_steps,
+            guidance_scale=guidance_scale,
+            generator=generator,
+        ).images[0]
+
+        print(f"[TryOn] Generated in {time.time()-t0:.1f}s ({num_steps} steps)")
+        return result
+
+
+# ---------------------------------------------------------------------------
+# Singleton
+# ---------------------------------------------------------------------------
+_handler_instance = None
+
+
+class TryOnHandler:
+    def __init__(self):
+        self.inference = FluxTryOnInference()
+
+    @staticmethod
+    def _decode_image(b64: str) -> Image.Image:
+        return Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
+
+    @staticmethod
+    def _encode_image(img: Image.Image, quality: int = 90) -> str:
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality)
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    async def handle(self, event: dict) -> dict:
+        try:
+            start = time.time()
+
+            user_b64 = event.get("user_image_base64") or event.get("user_image")
+            garment_b64 = event.get("garment_image_base64") or event.get("garment_image")
+
+            if not user_b64:
+                return {"success": False, "error": "Missing user_image"}
+
+            garment_name = event.get("garment_name", "a garment")
+            garment_desc = event.get("prompt") or garment_name
+            num_steps = min(int(event.get("num_steps", 28)), 50)
+            seed = int(event.get("seed", 42))
+
+            person_image = self._decode_image(user_b64)
+
+            print(f"[TryOn] Generating | garment={event.get('garment_id', 'unknown')}")
+
+            result = await self.inference.generate(
+                person_image=person_image,
+                garment_desc=garment_desc,
+                num_steps=num_steps,
+                seed=seed,
+            )
+
+            return {
+                "success": True,
+                "image_base64": self._encode_image(result),
+                "model_used": "flux-fill-dev",
+                "processing_time_ms": int((time.time() - start) * 1000),
+                "garment_id": event.get("garment_id", ""),
+                "garment_name": garment_name,
+            }
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {"success": False, "error": str(e)}
+
+
+async def async_runpod_handler(job):
+    global _handler_instance
+    if _handler_instance is None:
+        _handler_instance = TryOnHandler()
+    return await _handler_instance.handle(job["input"])
+
+
+if __name__ == "__main__":
+    import runpod
+    print("[TryOn] Starting RunPod serverless handler (FLUX.1-Fill-dev)...")
+    runpod.serverless.start({"handler": async_runpod_handler})
+
 
 import asyncio
 import base64
