@@ -37,7 +37,20 @@ import time
 import torch
 from PIL import Image, ImageDraw
 
-_hf_token = os.environ.get("HF_TOKEN")
+# --- HF Token: read from env and register globally ---
+_hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+print(f"[TryOn] HF_TOKEN present: {bool(_hf_token)} (len={len(_hf_token) if _hf_token else 0})")
+
+if _hf_token:
+    # Register token globally so ALL huggingface_hub calls use it automatically
+    try:
+        from huggingface_hub import login
+        login(token=_hf_token, add_to_git_credential=False)
+        print("[TryOn] HuggingFace login successful")
+    except Exception as e:
+        print(f"[TryOn] HuggingFace login warning: {e}")
+else:
+    print("[TryOn] WARNING: No HF_TOKEN found! Gated model download will fail.")
 
 MODEL_ID = "black-forest-labs/FLUX.1-Fill-dev"
 TARGET_HEIGHT = 1024
@@ -64,7 +77,7 @@ class FluxTryOnInference:
         self.pipe = FluxFillPipeline.from_pretrained(
             MODEL_ID,
             torch_dtype=torch.bfloat16,
-            token=_hf_token,
+            token=_hf_token,  # also passed explicitly as backup
         )
         # CPU offload keeps VRAM safe on RTX 4090 (24 GB)
         self.pipe.enable_model_cpu_offload()
