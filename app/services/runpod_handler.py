@@ -54,8 +54,8 @@ else:
 
 MODEL_ID = "black-forest-labs/FLUX.1-Fill-dev"
 # Single panel size — composite will be 2x this width
-PANEL_HEIGHT = 1024
-PANEL_WIDTH = 768
+PANEL_HEIGHT = 768
+PANEL_WIDTH = 576
 
 # Keywords to detect garment region
 _LOWER_BODY_KW = {"skirt", "pant", "pants", "trouser", "trousers", "jeans", "shorts",
@@ -96,7 +96,11 @@ class FluxTryOnInference:
             torch_dtype=torch.bfloat16,
             token=_hf_token,
         )
-        self.pipe.enable_model_cpu_offload()
+        # Sequential offload: each layer moves to GPU one at a time — slower but fits in 24GB
+        self.pipe.enable_sequential_cpu_offload()
+        # VAE optimizations to reduce peak VRAM
+        self.pipe.vae.enable_slicing()
+        self.pipe.vae.enable_tiling()
 
         print(f"[TryOn] Model loaded in {time.time() - t0:.1f}s")
 
