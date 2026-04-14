@@ -1,13 +1,10 @@
 """
-RunPod serverless handler for FLUX-based virtual try-on.
+RunPod serverless handler for FireRed-based virtual try-on.
 
-Uses black-forest-labs/FLUX.1-Kontext-dev via Diffusers' Kontext inpaint pipeline.
-Requires HF_TOKEN env var (FLUX.1-Kontext-dev is a gated model).
-
+Uses FireRedTeam/FireRed-Image-Edit-1.1 via Diffusers' QwenImageEditPlusPipeline.
 Verified against:
-  - diffusers 0.37.1 docs: FluxKontextInpaintPipeline API
-  - FLUX.1-Kontext-dev model card: https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev
-  - PyTorch 2.4 (RunPod base image)
+  - FireRed official inference example using QwenImageEditPlusPipeline
+  - FireRed model card on Hugging Face
 """
 
 # ============================================================
@@ -35,9 +32,10 @@ import os
 import time
 
 import torch
-from PIL import Image, ImageDraw
+from PIL import Image
 
-from .prompt_adjuster import DEFAULT_NEGATIVE_PROMPT
+from .prompt_adjuster import build_runpod_prompt
+from .tryon_interface import TryOnMetadata
 
 # --- HF Token: read from env and register globally ---
 _hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
@@ -52,33 +50,15 @@ if _hf_token:
     except Exception as e:
         print(f"[TryOn] HuggingFace login warning: {e}")
 else:
-    print("[TryOn] WARNING: No HF_TOKEN found! Gated model download will fail.")
+    print("[TryOn] WARNING: No HF_TOKEN found! Model download may fail for gated assets.")
 
-MODEL_ID = "black-forest-labs/FLUX.1-Kontext-dev"
-# Single working canvas size for masked editing
-PANEL_HEIGHT = 768
-PANEL_WIDTH = 576
-
-# Keywords to detect garment region
-_LOWER_BODY_KW = {"skirt", "pant", "pants", "trouser", "trousers", "jeans", "shorts",
-                   "legging", "leggings", "bottom", "bottoms", "palazzo", "culottes"}
-_FULL_BODY_KW = {"dress", "gown", "jumpsuit", "romper", "saree", "sari", "suit",
-                  "onepiece", "one-piece", "co-ord", "coord"}
+MODEL_ID = "FireRedTeam/FireRed-Image-Edit-1.1"
+TARGET_HEIGHT = 1024
+TARGET_WIDTH = 768
 
 
-def _detect_region(garment_name: str, category: str | None = None) -> str:
-    """Return 'upper', 'lower', or 'full' based on garment name/category."""
-    text = f"{garment_name} {category or ''}".lower()
-    tokens = set(text.replace("-", " ").split())
-    if tokens & _LOWER_BODY_KW:
-        return "lower"
-    if tokens & _FULL_BODY_KW:
-        return "full"
-    return "upper"
-
-
-class FluxTryOnInference:
-    """FLUX.1-Kontext-dev inpainting for virtual try-on using garment reference images."""
+class FireRedTryOnInference:
+    """FireRed-Image-Edit-1.1 editing pipeline for virtual try-on."""
 
     def __init__(self):
         self.pipe = None
@@ -88,65 +68,24 @@ class FluxTryOnInference:
         if self.pipe is not None:
             return
 
-        print(f"[TryOn] Loading FLUX.1-Kontext-dev... (device={self.device})")
+        print(f"[TryOn] Loading FireRed-Image-Edit-1.1... (device={self.device})")
         t0 = time.time()
 
-        from diffusers import FluxKontextInpaintPipeline
+        from diffusers import QwenImageEditPlusPipeline
 
-        self.pipe = FluxKontextInpaintPipeline.from_pretrained(
+        self.pipe = QwenImageEditPlusPipeline.from_pretrained(
             MODEL_ID,
             torch_dtype=torch.bfloat16,
             token=_hf_token,
         )
-        # Sequential offload: each layer moves to GPU one at a time — slower but fits in 24GB
-        self.pipe.enable_sequential_cpu_offload()
-        # VAE optimizations to reduce peak VRAM
-        self.pipe.vae.enable_slicing()
-        self.pipe.vae.enable_tiling()
+        self.pipe.to(self.device)
+        self.pipe.set_progress_bar_config(disable=True)
 
         print(f"[TryOn] Model loaded in {time.time() - t0:.1f}s")
 
     @staticmethod
-    def _make_mask(region: str) -> Image.Image:
-        """Build a mask for the person image.
-
-        White (255) = inpaint, Black (0) = keep.
-        """
-        mask = Image.new("L", (PANEL_WIDTH, PANEL_HEIGHT), 0)
-        draw = ImageDraw.Draw(mask)
-
-        x0 = int(PANEL_WIDTH * 0.05)
-        x1 = int(PANEL_WIDTH * 0.95)
-
-        if region == "upper":
-            y0 = int(PANEL_HEIGHT * 0.12)
-            y1 = int(PANEL_HEIGHT * 0.60)
-        elif region == "lower":
-            y0 = int(PANEL_HEIGHT * 0.45)
-            y1 = int(PANEL_HEIGHT * 0.95)
-        else:  # full
-            y0 = int(PANEL_HEIGHT * 0.12)
-            y1 = int(PANEL_HEIGHT * 0.95)
-
-        draw.rounded_rectangle([x0, y0, x1, y1], radius=24, fill=255)
-        return mask
-
-    @staticmethod
     def _prepare_person_image(person: Image.Image) -> Image.Image:
-        return person.resize((PANEL_WIDTH, PANEL_HEIGHT), Image.LANCZOS)
-
-    @staticmethod
-    def _prepare_reference_image(garment: Image.Image) -> Image.Image:
-        return garment.resize((PANEL_WIDTH, PANEL_HEIGHT), Image.LANCZOS)
-
-    @staticmethod
-    def _build_default_prompt(garment_name: str) -> str:
-        return (
-            f"Edit the input person photo so the person is wearing the exact same {garment_name} "
-            f"from the reference image. Keep identity, face, hair, hands, pose, body shape, "
-            f"background, framing, and lighting unchanged. Match garment color, print, silhouette, "
-            f"fabric texture, fit, folds, and shadows realistically. Output a realistic ecommerce try-on photo."
-        )
+        return person.resize((TARGET_WIDTH, TARGET_HEIGHT), Image.LANCZOS)
 
     async def generate(
         self,
@@ -156,44 +95,33 @@ class FluxTryOnInference:
         category: str | None = None,
         prompt: str | None = None,
         negative_prompt: str | None = None,
-        num_steps: int = 28,
-        guidance_scale: float = 2.5,
+        num_steps: int = 40,
+        true_cfg_scale: float = 4.0,
         seed: int = 42,
     ) -> Image.Image:
         if self.pipe is None:
             await self.load_model()
 
         t0 = time.time()
-        region = _detect_region(garment_name, category)
-        print(f"[TryOn] Region={region} | garment={garment_name}")
+        print(f"[TryOn] Garment={garment_name} | category={category}")
 
-        source = self._prepare_person_image(person_image)
-        image_reference = self._prepare_reference_image(garment_image)
-        mask = self._make_mask(region)
-        if hasattr(self.pipe, "mask_processor"):
-            mask = self.pipe.mask_processor.blur(mask, blur_factor=12)
-
-        prompt_text = (prompt or "").strip() or self._build_default_prompt(garment_name)
-        negative_text = (negative_prompt or "").strip() or DEFAULT_NEGATIVE_PROMPT
-        final_prompt = f"{prompt_text}\n\nHard constraints: {negative_text}"
-
-        generator = torch.Generator("cpu").manual_seed(seed)
+        person = self._prepare_person_image(person_image)
+        images = [person, garment_image.convert("RGB")]
+        prompt_text = (prompt or "").strip()
+        negative_text = (negative_prompt or "").strip() or " "
+        generator = torch.Generator(device=self.device).manual_seed(seed)
 
         result = self.pipe(
-            prompt=final_prompt,
-            image=source,
-            mask_image=mask,
-            image_reference=image_reference,
-            height=PANEL_HEIGHT,
-            width=PANEL_WIDTH,
-            strength=1.0,
+            image=images,
+            prompt=prompt_text,
+            negative_prompt=negative_text,
+            true_cfg_scale=true_cfg_scale,
             num_inference_steps=num_steps,
-            guidance_scale=guidance_scale,
-            max_sequence_length=512,
+            num_images_per_prompt=1,
             generator=generator,
         ).images[0]
 
-        print(f"[TryOn] Generated in {time.time() - t0:.1f}s ({num_steps} steps, region={region})")
+        print(f"[TryOn] Generated in {time.time() - t0:.1f}s ({num_steps} steps)")
         return result
 
 
@@ -205,7 +133,7 @@ _handler_instance = None
 
 class TryOnHandler:
     def __init__(self):
-        self.inference = FluxTryOnInference()
+        self.inference = FireRedTryOnInference()
 
     @staticmethod
     def _decode_image(b64: str) -> Image.Image:
@@ -231,9 +159,16 @@ class TryOnHandler:
 
             garment_name = event.get("garment_name", "a garment")
             category = event.get("category")
-            prompt = event.get("prompt")
-            negative_prompt = event.get("negative_prompt")
-            num_steps = min(int(event.get("num_steps", 28)), 50)
+            prompt, negative_prompt = build_runpod_prompt(
+                TryOnMetadata(
+                    garment_name=garment_name,
+                    garment_id=event.get("garment_id", ""),
+                    user_prompt=event.get("prompt"),
+                    user_negative_prompt=event.get("negative_prompt"),
+                    category=category,
+                )
+            )
+            num_steps = min(int(event.get("num_steps", 40)), 50)
             seed = int(event.get("seed", 42))
 
             person_image = self._decode_image(user_b64)
@@ -255,7 +190,7 @@ class TryOnHandler:
             return {
                 "success": True,
                 "image_base64": self._encode_image(result),
-                "model_used": "flux-kontext-dev",
+                "model_used": "firered-image-edit-1.1",
                 "processing_time_ms": int((time.time() - start) * 1000),
                 "garment_id": event.get("garment_id", ""),
                 "garment_name": garment_name,
@@ -278,5 +213,5 @@ async def async_runpod_handler(job):
 if __name__ == "__main__":
     import runpod
 
-    print("[TryOn] Starting RunPod serverless handler (FLUX.1-Kontext-dev)...")
+    print("[TryOn] Starting RunPod serverless handler (FireRed-Image-Edit-1.1)...")
     runpod.serverless.start({"handler": async_runpod_handler})

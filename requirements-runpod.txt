@@ -1,18 +1,27 @@
-# RunPod handler dependencies (FLUX.1-Kontext-dev virtual try-on)
-# torch, torchvision already pre-installed in runpod/pytorch:2.4 base image
-# DO NOT add torch or torchvision here
+# RunPod handler dependencies (FireRed-Image-Edit-1.1 virtual try-on)
+# torch, torchvision are installed in Dockerfile.
+# Old RTX 4090-oriented stack was PyTorch 2.5.1 + cu124.
+# Active RTX 5090-oriented stack is PyTorch 2.8.0 + cu128.
+# DO NOT add torch or torchvision here unless you also update Dockerfile.
+#
+# Old RTX 4090-oriented reference:
+# torch==2.5.1
+# torchvision==0.20.1
+#
+# Active RTX 5090-oriented reference:
+torch==2.8.0
+torchvision==0.23.0
 
 runpod>=1.6.0
 
-# diffusers 0.37.1: verified to contain FluxKontextInpaintPipeline
-# (see https://huggingface.co/docs/diffusers/api/pipelines/flux)
-diffusers==0.37.1
+# FireRed uses QwenImageEditPlusPipeline from the latest diffusers main branch
+git+https://github.com/huggingface/diffusers.git
 
-# transformers: T5 tokenizer (sentencepiece) + CLIP tokenizer for FLUX
-transformers>=4.44.0
+# transformers: required for Qwen2.5-VL based editor
+transformers>=4.51.3
 sentencepiece>=0.1.99
 
-# accelerate: required by enable_model_cpu_offload()
+# accelerate: required by diffusers inference
 accelerate>=0.26.0
 
 safetensors>=0.4.2
