@@ -1,4 +1,4 @@
-"""Runpod Serverless implementation of the FLUX.1-Kontext-dev try-on service."""
+"""Runpod Serverless implementation of the FireRed RunPod try-on service."""
 
 import asyncio
 import base64
@@ -49,7 +49,7 @@ class RunpodTryOnService(TryOnService):
         """
         Generate try-on image using Runpod handler.
 
-        The Runpod handler internally uses FLUX.1-Kontext-dev.
+        The Runpod handler internally uses FireRed-Image-Edit-1.1.
         """
         start_time = time.time()
 

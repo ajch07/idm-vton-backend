@@ -23,5 +23,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/flux:v27
+            ${{ secrets.DOCKERHUB_USERNAME }}/flux:v29
             ${{ secrets.DOCKERHUB_USERNAME }}/flux:${{ github.sha }}

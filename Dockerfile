@@ -35,12 +35,12 @@ pth = site.getsitepackages()[0] + '/00_block_fa.pth'; \
 open(pth, 'w').write('import sys; sys.modules.update({m: None for m in [\"flash_attn\", \"flash_attn.flash_attn_interface\", \"flash_attn.bert_padding\", \"flash_attn.flash_attn_triton\", \"flash_attn.ops\", \"flash_attn.ops.fused_dense\", \"flash_attn_2_cuda\", \"flash_attn_cuda\", \"flash_attn_3_cuda\"]})\n')"
 
 # ---- Phase 4: BUILD-TIME IMPORT TEST ----
-# This is the critical test — if FluxKontextInpaintPipeline can't be imported, the build FAILS here
+# This is the critical test — if QwenImageEditPlusPipeline can't be imported, the build FAILS here
 # instead of failing silently at runtime on RunPod.
 RUN python -c "\
 import torch; print(f'PyTorch {torch.__version__}'); \
-from diffusers import FluxKontextInpaintPipeline; \
-print('BUILD VERIFIED: FluxKontextInpaintPipeline imports successfully')"
+from diffusers import QwenImageEditPlusPipeline; \
+print('BUILD VERIFIED: QwenImageEditPlusPipeline imports successfully')"
 
 # Copy application code
 COPY app/ ./app/
@@ -51,5 +51,5 @@ ENV HF_HOME=/app/hf_cache
 ENV TRANSFORMERS_CACHE=/app/hf_cache
 RUN mkdir -p /app/hf_cache
 
-# Start FLUX try-on RunPod handler
+# Start FireRed try-on RunPod handler
 CMD ["python", "-m", "app.services.runpod_handler"]
