@@ -1,6 +1,8 @@
 # RunPod handler dependencies (FireRed-Image-Edit-1.1 virtual try-on)
-# torch, torchvision already pre-installed in runpod/pytorch:2.4 base image
-# DO NOT add torch or torchvision here
+# torch, torchvision are installed in Dockerfile.
+# Old RTX 4090-oriented stack was PyTorch 2.5.1 + cu124.
+# Active RTX 5090-oriented stack is PyTorch 2.8.0 + cu128.
+# DO NOT add torch or torchvision here unless you also update Dockerfile.
 
 runpod>=1.6.0
 
