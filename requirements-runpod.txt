@@ -1,10 +1,10 @@
-# RunPod handler dependencies (FLUX.1-Fill-dev virtual try-on)
+# RunPod handler dependencies (FLUX.1-Kontext-dev virtual try-on)
 # torch, torchvision already pre-installed in runpod/pytorch:2.4 base image
 # DO NOT add torch or torchvision here
 
 runpod>=1.6.0
 
-# diffusers 0.37.1: verified to contain FluxFillPipeline
+# diffusers 0.37.1: verified to contain FluxKontextInpaintPipeline
 # (see https://huggingface.co/docs/diffusers/api/pipelines/flux)
 diffusers==0.37.1
 

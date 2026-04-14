@@ -1,7 +1,4 @@
-"""
-Runpod Serverless implementation of Try-On service.
-Integrates with custom Runpod handler that uses IDM-VTON + Flux backup.
-"""
+"""Runpod Serverless implementation of the FLUX.1-Kontext-dev try-on service."""
 
 import asyncio
 import base64
@@ -52,13 +49,13 @@ class RunpodTryOnService(TryOnService):
         """
         Generate try-on image using Runpod handler.
 
-        The Runpod handler internally uses IDM-VTON, with Flux as fallback.
+        The Runpod handler internally uses FLUX.1-Kontext-dev.
         """
         start_time = time.time()
 
         try:
             # Build request payload
-            prompt = build_runpod_prompt(metadata)
+            prompt, negative_prompt = build_runpod_prompt(metadata)
 
             # Encode images to base64
             user_image_b64 = base64.b64encode(user_image_bytes).decode("utf-8")
@@ -74,6 +71,7 @@ class RunpodTryOnService(TryOnService):
                     "garment_id": metadata.garment_id,
                     "category": metadata.category,
                     "prompt": prompt,
+                    "negative_prompt": negative_prompt,
                 }
             }
 
