@@ -27,10 +27,21 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict:
+        mode = settings.tryon_service
+        model = None
+        if mode == "fal":
+            model = settings.fal_model or settings.fal_endpoint
+        elif mode == "openai":
+            model = settings.openai_model
+        elif mode == "runpod":
+            model = settings.runpod_endpoint
+        elif mode == "hybrid":
+            model = f"runpod:{settings.runpod_endpoint} | fal:{settings.fal_model or settings.fal_endpoint}"
+
         return {
             "status": "ok",
-            "mode": "fal",
-            "model": settings.fal_model or settings.fal_endpoint,
+            "mode": mode,
+            "model": model,
         }
 
     @app.on_event("startup")

@@ -168,6 +168,7 @@ class RunpodTryOnService(TryOnService):
             return TryOnResult(
                 image_bytes=image_bytes,
                 mime_type="image/jpeg",
+                provider_used="runpod",
                 model_used=model_used,
                 processing_time_ms=processing_time_ms,
             )

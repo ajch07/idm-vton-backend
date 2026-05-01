@@ -1,11 +1,10 @@
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
+import httpx
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token as google_id_token
 
 from .config import get_settings
 
@@ -58,23 +57,26 @@ def decode_access_token(token: str) -> str:
     return str(subject)
 
 
-def verify_google_token(id_token: str) -> dict[str, Any]:
-    if not settings.google_client_id:
+async def fetch_supabase_user(access_token: str) -> dict[str, Any]:
+    if not settings.supabase_url or not settings.supabase_anon_key:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="GOOGLE_CLIENT_ID is not set.",
+            detail="SUPABASE_URL and SUPABASE_ANON_KEY are not set.",
         )
 
-    try:
-        info = google_id_token.verify_oauth2_token(
-            id_token,
-            google_requests.Request(),
-            settings.google_client_id,
-        )
-    except ValueError as exc:
+    url = f"{settings.supabase_url.rstrip('/')}/auth/v1/user"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "apikey": settings.supabase_anon_key,
+    }
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.get(url, headers=headers)
+
+    if response.status_code >= 400:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Google token.",
-        ) from exc
+            detail="Invalid or expired Supabase session.",
+        )
 
-    return info
+    return response.json()

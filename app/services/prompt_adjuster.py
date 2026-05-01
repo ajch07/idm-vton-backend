@@ -5,14 +5,16 @@ from .tryon_interface import TryOnMetadata
 
 
 DEFAULT_PROMPT_TEMPLATE = (
-    """ 1. Edit the input person photo so the person is wearing the **exact** {garment_description} from the reference image.
-        2. You **MUST** preserve the person's identity, face, hair, hands, pose, body shape, background, framing, and lighting exactly.
-        3. You **MUST** match the garment color, print,silhouette, fabric texture, fit, folds, and shadows realistically. Output a realistic ecommerce try-on photo."""
+    "Edit the person in image 1 so they wear the exact {garment_description} from image 2. "
+    "Preserve identity, face, hair, hands, pose, body shape, background, framing, and lighting. "
+    "Match color, print, silhouette, fabric texture, fit, folds, and shadows. "
+    "Output a realistic ecommerce try-on photo."
 )
 
 DEFAULT_NEGATIVE_PROMPT = (
-    """ 1. *You **MUST NOT** change face, eyes, nose, lips, jawline, skin tone, hair, hands, pose, body proportions, background, framing, or lighting*. 
-        2. *You **MUST NOT** apply beauty retouching, age change, identity drift, extra people, extra limbs, duplicate garments, artifacts, blur, text, or watermark.*"""
+    "Do not change face, eyes, nose, lips, jawline, skin tone, hair, hands, pose, body proportions, "
+    "background, framing, or lighting. No beauty retouching, age change, identity drift, extra people, "
+    "extra limbs, duplicate garments, artifacts, blur, text, or watermark."
 )
 
 
@@ -38,17 +40,15 @@ def _edit_scope(metadata: TryOnMetadata) -> str:
 
     if any(keyword in text for keyword in ("skirt", "pant", "pants", "trouser", "jean", "short", "bottom", "palazzo")):
         return (
-            "You MUST edit only the lower-body clothing region from the waist down. You MUST NOT alter "
-            "the face, hair, upper body, arms, hands, or background."
+            "Edit only the lower-body clothing from the waist down. Do not alter the face, hair, upper body, "
+            "arms, hands, or background."
         )
     if any(keyword in text for keyword in ("dress", "gown", "jumpsuit", "romper", "saree", "sari")):
         return (
-            "You MUST edit only the outfit region. You MUST preserve the person's face, hair, hands, "
-            "body shape, pose, and background exactly."
+            "Edit only the outfit. Preserve the person's face, hair, hands, body shape, pose, and background."
         )
     return (
-        "You MUST edit only the clothing region on the person's body. You MUST NOT alter the face, "
-        "hair, hands, body shape, pose, or background."
+        "Edit only the clothing on the body. Do not alter the face, hair, hands, body shape, pose, or background."
     )
 
 
@@ -82,14 +82,31 @@ def build_fal_compatible_prompt(metadata: TryOnMetadata) -> tuple[str, str]:
     prompt, negative_prompt = build_universal_prompt(metadata)
     
     prompt = (
-        "Image 1 is the base person photo and MUST remain the same person. "
-        "Image 2 is the garment reference. "
+        "Image 1 is the person. Image 2 is the garment. "
+        "Use only the garment from image 2. Do not copy the model, mannequin, legs, pose, or background. "
+        "Preserve facial identity and skin texture. "
         f"{_edit_scope(metadata)} "
-        "You MUST use only the garment from image 2. You MUST NOT copy the model, mannequin, legs, pose, or background from image 2. "
-        "You MUST preserve facial identity exactly with the same eyes, nose, lips, jawline, expression, and skin texture. "
         f"{prompt}"
     )
     
+    return prompt, negative_prompt
+
+
+def build_openai_prompt(metadata: TryOnMetadata) -> tuple[str, str]:
+    """
+    Build prompt optimized for OpenAI image editing.
+
+    Keeps the instructions short and explicit so the provider can be swapped
+    without changing the rest of the pipeline.
+    """
+    prompt, negative_prompt = build_universal_prompt(metadata)
+    prompt = (
+        "Edit image 1 so the person wears the garment from image 2. "
+        "Do not change identity, face, hair, pose, hands, background, framing, or lighting. "
+        "Use realistic fabric texture, folds, shadows, and fit. "
+        f"{_edit_scope(metadata)} "
+        f"{prompt}"
+    )
     return prompt, negative_prompt
 
 

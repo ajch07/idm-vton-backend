@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..dependencies import get_current_user, get_session
-from ..models import CreditTransaction, User
+from ..models import CreditTransaction, TryOnGeneration, User
+from ..schemas import TryOnGenerationOut
+from ..services.storage import build_generation_path, create_signed_object_url, upload_to_supabase
 from ..services.tryon_factory import get_tryon_service
 from ..services.tryon_interface import TryOnMetadata
 
@@ -80,6 +82,16 @@ async def refund_credits(
     await session.commit()
 
 
+def _guess_extension(mime_type: str) -> str:
+    if mime_type == "image/png":
+        return ".png"
+    if mime_type in {"image/jpeg", "image/jpg"}:
+        return ".jpg"
+    if mime_type == "image/webp":
+        return ".webp"
+    return ".bin"
+
+
 @router.post("/api/try-on")
 async def try_on(
     userImage: UploadFile = File(...),
@@ -125,12 +137,35 @@ async def try_on(
             garment_image_type=garmentImage.content_type or "image/jpeg",
             metadata=metadata,
         )
+
+        generation_id = uuid.uuid4()
+        storage_path = build_generation_path(current_user.id, _guess_extension(result.mime_type))
+        image_url = await upload_to_supabase(result.image_bytes, result.mime_type, storage_path)
+
+        generation = TryOnGeneration(
+            id=generation_id,
+            user_id=current_user.id,
+            provider=result.provider_used or settings.tryon_service,
+            model_used=result.model_used,
+            garment_id=garmentId,
+            garment_name=garmentName,
+            category=category,
+            prompt=prompt,
+            negative_prompt=negativePrompt,
+            image_url=image_url,
+            storage_path=storage_path,
+            mime_type=result.mime_type,
+            processing_time_ms=result.processing_time_ms,
+        )
+        session.add(generation)
+        await session.commit()
+        await session.refresh(generation)
         
         logger.info(
             f"Try-on succeeded | user={current_user.id} | garment={garmentId} | "
             f"model={result.model_used} | time={result.processing_time_ms}ms"
         )
-        
+
         return Response(content=result.image_bytes, media_type=result.mime_type)
     except HTTPException:
         await refund_credits(session, current_user.id, settings.credits_per_tryon, "try_on_refund")
@@ -139,3 +174,32 @@ async def try_on(
         logger.error(f"Try-on failed | user={current_user.id} | garment={garmentId} | error={str(exc)}")
         await refund_credits(session, current_user.id, settings.credits_per_tryon, "try_on_refund")
         raise HTTPException(status_code=500, detail="Try-on failed.") from exc
+
+
+@router.get("/api/try-on/history", response_model=list[TryOnGenerationOut])
+async def try_on_history(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[TryOnGenerationOut]:
+    result = await session.execute(
+        select(TryOnGeneration)
+        .where(TryOnGeneration.user_id == current_user.id)
+        .order_by(TryOnGeneration.created_at.desc())
+    )
+    generations = result.scalars().all()
+    signed_generations = []
+    for item in generations:
+        image_url = item.image_url
+        try:
+            image_url = await create_signed_object_url(item.storage_path, expires_in=60 * 60)
+        except HTTPException:
+            logger.warning(
+                "Could not create signed history URL | user=%s | path=%s",
+                current_user.id,
+                item.storage_path,
+            )
+        signed_generations.append(
+            TryOnGenerationOut.model_validate(item).model_copy(update={"image_url": image_url})
+        )
+
+    return signed_generations

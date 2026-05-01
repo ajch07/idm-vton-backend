@@ -24,3 +24,9 @@ class Base(DeclarativeBase):
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.exec_driver_sql(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS supabase_user_id VARCHAR(255)"
+        )
+        await conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_supabase_user_id ON users (supabase_user_id)"
+        )

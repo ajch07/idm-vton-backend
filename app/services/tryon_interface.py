@@ -23,6 +23,7 @@ class TryOnResult:
     """Result from try-on service."""
     image_bytes: bytes
     mime_type: str
+    provider_used: Optional[str] = None
     model_used: Optional[str] = None  # "idm-vton", "flux", "fal", etc.
     processing_time_ms: Optional[int] = None
     error: Optional[str] = None

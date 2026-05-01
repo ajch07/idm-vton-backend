@@ -66,7 +66,7 @@ def get_tryon_service(service_type: Optional[str] = None) -> TryOnService:
     Factory function to get appropriate Try-On service instance.
 
     Args:
-        service_type: "fal", "runpod", "hybrid", or None (uses env variable)
+        service_type: "fal", "runpod", "hybrid", "openai", or None (uses env variable)
 
     Returns:
         TryOnService instance
@@ -84,6 +84,13 @@ def get_tryon_service(service_type: Optional[str] = None) -> TryOnService:
         if not settings.fal_api_key:
             raise HTTPException(status_code=500, detail="FAL_API_KEY is not set")
         return FALTryOnService()
+
+    elif service == "openai":
+        if not settings.openai_api_key:
+            raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not set")
+        from .openai_service import OpenAITryOnService
+
+        return OpenAITryOnService()
 
     elif service == "runpod":
         if not settings.runpod_endpoint or not settings.runpod_api_key:
@@ -117,5 +124,5 @@ def get_tryon_service(service_type: Optional[str] = None) -> TryOnService:
 
     else:
         raise ValueError(
-            f"Invalid TRYON_SERVICE: {service}. Must be 'fal', 'runpod', or 'hybrid'"
+            f"Invalid TRYON_SERVICE: {service}. Must be 'fal', 'openai', 'runpod', or 'hybrid'"
         )

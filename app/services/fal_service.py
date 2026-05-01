@@ -206,6 +206,7 @@ class FALTryOnService(TryOnService):
                 return TryOnResult(
                     image_bytes=response.content,
                     mime_type=content_type or "image/png",
+                    provider_used="fal",
                     model_used="fal",
                     processing_time_ms=processing_time_ms,
                 )
@@ -227,6 +228,7 @@ class FALTryOnService(TryOnService):
             return TryOnResult(
                 image_bytes=image_bytes,
                 mime_type=mime_type,
+                provider_used="fal",
                 model_used="fal",
                 processing_time_ms=processing_time_ms,
             )

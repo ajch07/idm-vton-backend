@@ -50,8 +50,6 @@ class Settings:
     jwt_alg = _env_str("JWT_ALG", "HS256")
     access_token_expire_min = _env_int("ACCESS_TOKEN_EXPIRE_MIN", 60 * 24 * 7)
 
-    google_client_id = _env_str("GOOGLE_CLIENT_ID")
-
     razorpay_key_id = _env_str("RAZORPAY_KEY_ID")
     razorpay_key_secret = _env_str("RAZORPAY_KEY_SECRET")
 
@@ -82,6 +80,12 @@ class Settings:
     fal_garment_field = _env_str("FAL_GARMENT_FIELD")
     fal_extra_json = _env_str("FAL_EXTRA_JSON")
 
+    # OpenAI Configuration
+    openai_api_key = _env_str("OPENAI_API_KEY")
+    openai_model = _env_str("OPENAI_MODEL", "gpt-image-2")
+    openai_image_size = _env_str("OPENAI_IMAGE_SIZE", "1024x1536")
+    openai_quality = _env_str("OPENAI_QUALITY", "high")
+
     # Runpod Configuration
     runpod_endpoint = _env_str("RUNPOD_ENDPOINT")
     runpod_api_key = _env_str("RUNPOD_API_KEY")
@@ -90,6 +94,7 @@ class Settings:
     max_upload_mb = _env_int("MAX_UPLOAD_MB", 12)
 
     supabase_url = _env_str("SUPABASE_URL")
+    supabase_anon_key = _env_str("SUPABASE_ANON_KEY")
     supabase_service_key = _env_str("SUPABASE_SERVICE_ROLE_KEY")
     supabase_bucket = _env_str("SUPABASE_STORAGE_BUCKET", "product-media")
 

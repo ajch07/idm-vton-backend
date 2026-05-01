@@ -16,6 +16,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255))
     google_sub: Mapped[Optional[str]] = mapped_column(String(255), unique=True, index=True)
+    supabase_user_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, index=True)
     name: Mapped[Optional[str]] = mapped_column(String(255))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     credits: Mapped[int] = mapped_column(Integer, default=0)
@@ -86,4 +87,25 @@ class CreditTransaction(Base):
     reason: Mapped[str] = mapped_column(String(80), nullable=False)
     source: Mapped[str] = mapped_column(String(80), default="system")
     reference_id: Mapped[Optional[str]] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TryOnGeneration(Base):
+    __tablename__ = "try_on_generations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    model_used: Mapped[Optional[str]] = mapped_column(String(120))
+    garment_id: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    garment_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[Optional[str]] = mapped_column(String(120))
+    prompt: Mapped[Optional[str]] = mapped_column(Text)
+    negative_prompt: Mapped[Optional[str]] = mapped_column(Text)
+    image_url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    processing_time_ms: Mapped[Optional[int]] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

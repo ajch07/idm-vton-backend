@@ -25,9 +25,13 @@ Environment variables:
 - `FAL_IMAGE_FIELD` (optional, default `image_urls`)
 - `FAL_USER_FIELD` + `FAL_GARMENT_FIELD` (optional, set both to use separate fields)
 - `FAL_EXTRA_JSON` (optional, JSON object string merged into payload)
+- `OPENAI_API_KEY` (required if `TRYON_SERVICE=openai`)
+- `OPENAI_MODEL` (optional, default `gpt-image-2`)
+- `OPENAI_IMAGE_SIZE` (optional, default `1024x1536`)
+- `OPENAI_QUALITY` (optional, default `high`)
+- `SUPABASE_ANON_KEY` (required for Supabase Google sign-in exchange)
 - `DATABASE_URL` (required, PostgreSQL)
 - `JWT_SECRET` (required)
-- `GOOGLE_CLIENT_ID` (required for Google login)
 - `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` (required for payments)
 - `ADMIN_EMAILS` (optional, comma-separated emails promoted to admin on signup)
 - `CREDITS_SIGNUP` / `CREDITS_PER_TRYON` / `CREDITS_PER_PURCHASE` (optional)
@@ -37,8 +41,20 @@ Environment variables:
 
 ## Run
 ```bash
-uvicorn main:app --reload --port 3001
+uvicorn main:app --reload --port 8001
 ```
+
+## Switching Providers
+Default behavior stays on FAL. To switch without changing the rest of the app, set:
+```env
+TRYON_SERVICE=openai
+```
+
+Other valid values:
+- `fal`
+- `openai`
+- `runpod`
+- `hybrid`
 
 ## Endpoint
 `POST /api/try-on`
@@ -53,11 +69,16 @@ Multipart fields:
 
 Health check: `GET /health`
 
+History:
+- `GET /api/try-on/history` - current user's saved generations, newest first
+
+Each successful generation is also uploaded to Supabase under a per-user path in the configured bucket and stored in the database so you can fetch previous generations later.
+
 ## Auth + Admin
 Auth:
 - `POST /api/auth/register`
 - `POST /api/auth/login`
-- `POST /api/auth/google`
+- `POST /api/auth/supabase`
 - `GET /api/auth/me`
 
 Products:

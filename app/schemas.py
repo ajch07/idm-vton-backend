@@ -16,8 +16,8 @@ class UserLogin(BaseModel):
     password: str
 
 
-class GoogleAuthRequest(BaseModel):
-    id_token: str
+class SupabaseAuthRequest(BaseModel):
+    access_token: str
 
 
 class UserOut(BaseModel):
@@ -163,6 +163,26 @@ class AdminActivityOut(BaseModel):
     reason: str
     source: str
     reference_id: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TryOnGenerationOut(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    provider: str
+    model_used: Optional[str] = None
+    garment_id: str
+    garment_name: str
+    category: Optional[str] = None
+    prompt: Optional[str] = None
+    negative_prompt: Optional[str] = None
+    image_url: str
+    storage_path: str
+    mime_type: str
+    processing_time_ms: Optional[int] = None
     created_at: datetime
 
     class Config:
